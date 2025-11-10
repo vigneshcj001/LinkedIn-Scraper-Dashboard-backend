@@ -9,6 +9,7 @@ from collections import Counter
 from urllib.parse import urlparse, urlunparse
 
 from fastapi import FastAPI, HTTPException, Request, UploadFile, File
+from io import StringIO, BytesIO
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from pydantic import BaseModel
@@ -104,16 +105,35 @@ def fetch_from_rapidapi(endpoint: str, params: dict, rapidapi_key: str = None):
 
 
 def process_csv_upload(file: UploadFile) -> pd.DataFrame:
-    """Reads uploaded CSV into a DataFrame."""
-    try:
-        contents = file.file.read()
-        df = pd.read_csv(io.BytesIO(contents))
-        return df
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=f"Invalid CSV file: {e}")
-    finally:
-        file.file.close()
+    """
+    Process uploaded CSV or Excel file and return a pandas DataFrame.
+    Supports .csv, .xls, and .xlsx formats.
+    """
+    filename = file.filename.lower()
 
+    try:
+        # Read CSV
+        if filename.endswith(".csv"):
+            contents = file.file.read().decode("utf-8")
+            df = pd.read_csv(StringIO(contents))
+
+        # Read Excel (.xls or .xlsx)
+        elif filename.endswith((".xls", ".xlsx")):
+            contents = file.file.read()
+            df = pd.read_excel(BytesIO(contents))
+
+        else:
+            raise HTTPException(
+                status_code=400,
+                detail="Unsupported file format. Please upload a .csv or .xlsx file.",
+            )
+
+        # Strip spaces in column names
+        df.columns = df.columns.str.strip().str.lower()
+        return df
+
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=f"Error reading file: {str(e)}")
 
 # =========================================================
 # ROUTES
